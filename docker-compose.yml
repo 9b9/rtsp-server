@@ -1,0 +1,45 @@
+version: "3.3"
+services:
+  rtsp-server:
+    image: bluenviron/mediamtx
+    restart: always
+    ports:
+      - 1935:1935
+      - 8554:8554
+      - 8888:8888
+      - 8889:8889
+      - 9997:9997
+    environment:
+      - RTSP_PROTOCOLS=tcp
+      - MTX_API=yes
+      - MTX_APIADDRESS=0.0.0.0:9997
+
+  videos-streaming-worker:
+    image: jrottenberg/ffmpeg
+    restart: always
+    links:
+      - "rtsp-server:rtsp-server"
+    depends_on:
+      - rtsp-server
+    volumes:
+      - ./videos:/videos
+    entrypoint: |
+      bash -c " 
+        for file in /videos/*.mp4; do 
+          export url=rtsp://rtsp-server:8554/$(basename $$file .mp4); 
+          echo read rtsp from $${url/rtsp-server/localhost}; 
+          ffmpeg -d -re -stream_loop -1 -i $$file -c copy -f rtsp $$url & 
+        done
+
+        tail -f /dev/null"
+
+  webcam:
+    image: jrottenberg/ffmpeg
+    restart: always
+    links:
+      - "rtsp-server:rtsp-server"
+    depends_on:
+      - rtsp-server
+    devices:
+      - /dev/video0:/dev/video0
+    command: -f v4l2 -framerate 10 -video_size 640x480 -i /dev/video0 -f rtsp -rtsp_transport tcp rtsp://rtsp-server:8554/webcam
